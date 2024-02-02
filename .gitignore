@@ -28,7 +28,8 @@ MANIFEST
 
 # Folders to ignore
 data_raw/
-data/austin_listings_processed.csv 
+data/austin_listings_processed.csv
+data/austin_listings_cleaned.csv 
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
