@@ -27,6 +27,7 @@ share/python-wheels/
 MANIFEST
 
 # Folders to ignore
+other_resources/
 data_raw/
 data/austin_listings_processed.csv
 data/austin_listings_cleaned.csv 
