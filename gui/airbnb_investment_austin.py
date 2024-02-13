@@ -18,11 +18,11 @@ st.set_page_config(layout="wide")
 """
 
 
-## load models
+## load models and data
 xgb_price = pickle.load(open('./../model_files/xgb_price.pkl', "rb"))
 xgb_occupancy_rate = pickle.load(open('./../model_files/xgb_occupancy_rate.pkl', "rb"))
 home_price = pickle.load(open('./../model_files/home_price.pkl', "rb"))
-
+df = pd.read_csv('./../data/austin_listings_clean.csv').drop(columns=['price', 'occupancy_rate'])
 
 
 # related lists and variables
@@ -33,8 +33,8 @@ zipcodes = [78702, 78704, 78741, 78745, 78703, 78731, 78705, 78727, 78751,
        78750, 78730, 78739, 78725, 78747, 78742, 78719]
 zipcodes.sort()
 num_bedrooms = range(8)
-num_beds = range(16)
-num_baths = range(9)
+# num_beds = range(16)
+# num_baths = range(9)
 
 data = np.random.randn(10, 1)
 a = 5
@@ -54,15 +54,22 @@ col1.write('#### Home information')
 # Create a dropdown menu with some options
 col1.write('')
 selected_zipcode = col1.selectbox("Zipcode:", zipcodes)
-
+# selected_zipcode = 78759
+# selected_bedroom = 1
 
 selected_bedroom = col1.selectbox("Bedrooms:", num_bedrooms)
-selected_bed = col1.selectbox("Beds:", num_beds)
-selected_bath = col1.selectbox("Baths:", num_baths)
+# selected_bed = col1.selectbox("Beds:", num_beds)
+# selected_bath = col1.selectbox("Baths:", num_baths)
 
-
+focus_data = df[(df['zipcode'] == selected_zipcode) & (df['bedrooms'] == selected_bedroom)]
+number_of_listings = focus_data.shape[0]
+col1.write('###### Number of listings:')
+col1.write(f'##### {number_of_listings}')
+if number_of_listings < 50: col1.warning('Too few observations for reliable modeling', icon="⚠️")
 
 # do estimations low
+selected_bed = focus_data['beds'].mean()
+selected_bath = focus_data['bath'].mean()
 X_test = []
 for i in ['Q1', 'Q2', 'Q3', 'Q4']:
     X_test.append([selected_bedroom, selected_bed, selected_bath, selected_zipcode,
