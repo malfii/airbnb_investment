@@ -18,10 +18,12 @@ st.set_page_config(layout="wide")
 
 """
 # Airbnb market in Austin, TX
-- Use the 'Estimator tool' to estimate airbnb income and occupancy rate for your home.
-- Use the 'Market research tool' to learn more about different neighborhoods in Austin.
+Estimate your income and research the market
 """
 st.text('Based on 2023 data')
+
+st.divider()  # horizontal line
+
 
 ## load models and data
 xgb_price = pickle.load(open('./../model_files/xgb_price.pkl', "rb"))
@@ -161,6 +163,8 @@ else:
     )
 
 col3.altair_chart(chart)
+
+st.divider()  # horizontal line
 
 #=========> Estimator tool <============
 df_all = pd.read_csv('./../data/austin_listings_clean.csv')
@@ -367,71 +371,8 @@ chart = (
 )
 col3.altair_chart(chart)
 
-st.text('This app is developed by Masoud "Massi" Alfi to help the investors find the best investment opportunities in Austin Texas.[Inside airbnb](www.insideairbnb.com) was used for get quarterly data from airbnb. Home price data was extracted from [Zillow](www.zillow.com/data).')
+st.text('This app is developed by Masoud "Massi" Alfi to help the investors find the best investment opportunities in Austin Texas.')
+st.text('data source:')
+st.text('- www.insideairbnb.com')
+st.text('- www.zillow.com/data')
 
-st.write(f"Selected Option:    {a}" )
-st.write(f"Selected Option:    {a}" )
-# Set the title of the app
-st.title("Colored Boxes with Text Example")
-
-
-# Display colored boxes with text
-st.markdown(colored_box("<b>This is a blue box<b>", "#ADD8E6"), unsafe_allow_html=True)
-st.markdown(colored_box("This is a green box", "green"), unsafe_allow_html=True)
-st.markdown(colored_box("This is a yellow box", "yellow"), unsafe_allow_html=True)
-st.markdown(colored_box("This is a red box", "red"), unsafe_allow_html=True)
-
-
-
-
-
-
-st.subheader("Market research tool")
-
-with st.container():
-   st.write("This is inside the container")
-
-   # You can call any Streamlit command, including custom components:
-   st.bar_chart(np.random.randn(50, 3))
-
-st.write("This is outside the container")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-   st.header("A cat")
-   st.image("https://static.streamlit.io/examples/cat.jpg")
-
-with col2:
-   st.header("A dog")
-   st.image("https://static.streamlit.io/examples/dog.jpg")
-
-with col3:
-   st.header("An owl")
-   st.image("https://static.streamlit.io/examples/owl.jpg")
-
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
-
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
-
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
-
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
-
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
