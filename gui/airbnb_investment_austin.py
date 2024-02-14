@@ -6,17 +6,22 @@ import pickle
 import os
 # xgboost
 import xgboost as xgb
+# streamlit and folium
+import streamlit_folium as st_folium
+from streamlit_folium import folium_static
+import folium 
+#geopandas
+import geopandas as gpd 
 
 # make the page wider 
 st.set_page_config(layout="wide")
 
 """
-# Airbnb market in Austin (2023 data)
-
+# Airbnb market in Austin, TX
 - Use the 'Estimator tool' to estimate airbnb income and occupancy rate for your home.
-- Use the 'Market research tool' to learn more about Austin's airbnb market.
+- Use the 'Market research tool' to learn more about different neighborhoods in Austin.
 """
-
+st.text('Based on 2023 data')
 
 ## load models and data
 xgb_price = pickle.load(open('./../model_files/xgb_price.pkl', "rb"))
@@ -54,26 +59,32 @@ col1.write('#### Home information')
 # Create a dropdown menu with some options
 col1.write('')
 selected_zipcode = col1.selectbox("Zipcode:", zipcodes)
-# selected_zipcode = 78759
-# selected_bedroom = 1
-
 selected_bedroom = col1.selectbox("Bedrooms:", num_bedrooms)
-# selected_bed = col1.selectbox("Beds:", num_beds)
-# selected_bath = col1.selectbox("Baths:", num_baths)
 
+# build a dataframe for the date of interest from our observations
 focus_data = df[(df['zipcode'] == selected_zipcode) & (df['bedrooms'] == selected_bedroom)]
-number_of_listings = focus_data.shape[0]
-col1.write('###### Number of listings:')
+number_of_listings = int(focus_data.shape[0]/4)
+# Use calculated 
+col1.write('###### Number of homes:')
 col1.write(f'##### {number_of_listings}')
-if number_of_listings < 50: col1.warning('Too few observations for reliable modeling', icon="⚠️")
+if number_of_listings < 15: col1.warning('Too few observations for reliable modeling!', icon="⚠️")
 
-# do estimations low
+#estimate the realistic number of beds and baths
+# Also, for other features, to avoid extrapolation and getting none-sense values, use the majority class
 selected_bed = focus_data['beds'].mean()
 selected_bath = focus_data['bath'].mean()
+superhost = focus_data['host_is_superhost'].value_counts().sort_values(ascending=False).index[0]
+review = focus_data['review_scores_rating'].mean()
+pool = focus_data['has_pool'].value_counts().sort_values(ascending=False).index[0]
+petfriendly = focus_data['is_petfriendly'].value_counts().sort_values(ascending=False).index[0]
+workspace = focus_data['has_workspace'].value_counts().sort_values(ascending=False).index[0]
+parking = focus_data['has_freeparking'].value_counts().sort_values(ascending=False).index[0]
+gym = focus_data['has_gym'].value_counts().sort_values(ascending=False).index[0]
+# do estimate of the price based on bedrooms, zip and other features (found based on zip and bedrooms)
 X_test = []
 for i in ['Q1', 'Q2', 'Q3', 'Q4']:
     X_test.append([selected_bedroom, selected_bed, selected_bath, selected_zipcode,
-                    0, 4.9, i, 0, 0, 0, 0, 0, 
+                    superhost, review, i, pool, petfriendly, workspace, parking, gym, 
                     home_price[selected_zipcode][min(max(selected_bedroom, 1),5)]])
 # convert the X variables to dataframe
 X_test = pd.DataFrame(X_test, columns=['bedrooms', 'beds', 'bath', 'zipcode', 'host_is_superhost',
@@ -81,31 +92,280 @@ X_test = pd.DataFrame(X_test, columns=['bedrooms', 'beds', 'bath', 'zipcode', 'h
        'has_workspace', 'has_freeparking', 'has_gym', 'home_price_aprx'])
 # convert type to category for categorical features
 X_test[['zipcode', 'time_quarter']] = X_test[['zipcode', 'time_quarter']].astype('category')
-
-
+# estimate the occupancy rate, price, and income
 occupancy_rate = xgb_occupancy_rate.predict(X_test)
+# set min and max for model prediction
+occupancy_rate = np.clip(occupancy_rate, 0, 0.7)
 price = xgb_price.predict(X_test)
-
-income_low = sum(price * occupancy_rate * 90)
+income = sum(price * occupancy_rate * 90)
+income_array = price * occupancy_rate * 90
+home_value = home_price[selected_zipcode][min(max(selected_bedroom, 1),5)]
+X_test['occupancy_rate'] = occupancy_rate
+X_test['income'] = income_array
 
 #==========> column 2
-col2.write(f'##### Yearly income (low): ')
-col2.markdown(colored_box(f"<b>${income_low}<b>", "#ADD8E6"), unsafe_allow_html=True)
-
-col2.write(f'##### Yearly income (high): ')
-col2.markdown(colored_box(f"<b>${a}<b>", "#ADD8E6"), unsafe_allow_html=True)
+col2.write('')
+col2.write('')
+col2.write(f'##### Yearly income: ')
+col2.markdown(colored_box(f"<b>${income:,.0f}<b>", "white"), unsafe_allow_html=True)
+col2.write('')
+col2.write('')
 col2.write(f'##### Occupancy rate: ')
-col2.markdown(colored_box(f"<b>${a}<b>", "#ADD8E6"), unsafe_allow_html=True)
-
+col2.markdown(colored_box(f"<b>{np.mean(occupancy_rate):.2f}<b>", "white"), unsafe_allow_html=True)
+col2.write('')
+col2.write('')
 col2.write(f'##### Yearly income (per 100k investment): ')
-col2.markdown(colored_box(f"<b>${a}<b>", "#ADD8E6"), unsafe_allow_html=True)
-
-#col2.info("Income and occupancy rate")
+col2.markdown(colored_box(f"<b>${income/home_value*100000:,.0f}<b>", "white"), unsafe_allow_html=True)
 
 #==========> column 3
 #col3.write('#### Home information')
-col3.write('some text')
-col3.line_chart(data)
+plot_var = col3.selectbox("", ['Average income', 'Occupancy rate'])
+#Plot the altair chart
+if plot_var == 'Average income':
+    chart = (
+            alt.Chart(
+                data=X_test,
+                #title="Income at different quarters",
+            )
+            .mark_bar()
+            .encode(
+                x= alt.X('time_quarter', title='Time (quarter)'),
+                y=alt.Y('income', title='Quarterly income, $')
+            )
+            .properties(
+                width=650,  # Set the width of the plot
+                height=350 
+            )
+            .configure_axis(
+                labelAngle=0  # Set the angle of the x-axis labels
+            )
+    )
+else: 
+    chart = (
+            alt.Chart(
+                data=X_test,
+            #    title="Your title",
+            )
+            .mark_bar()
+            .encode(
+                x= alt.X('time_quarter', title='Time (quarter)'),
+                y=alt.Y('occupancy_rate', title='Occupancy rate')
+            )
+            .properties(
+                width=650,  # Set the width of the plot
+                height=350 
+            )
+            .configure_axis(
+                labelAngle=0  # Set the angle of the x-axis labels
+            )
+    )
+
+col3.altair_chart(chart)
+
+#=========> Estimator tool <============
+df_all = pd.read_csv('./../data/austin_listings_clean.csv')
+df_all['quarterly_income'] = df_all['price'] * df_all['occupancy_rate'] * 90
+df_all['quarterly_income_per100'] = df_all['price'] * df_all['occupancy_rate'] * 90 / df_all['home_price_aprx'] * 100_000
+
+st.header("Market research tool")
+
+col1, col_1, col2,col_2, col3, col3_ = st.columns([2,0.15, 1.5, 0.5, 2.5, 0.75])
+
+#==========> column 1
+#col1.write('#### Zip code:')
+# Create a dropdown menu with some options
+selected_zipcode = col1.selectbox("Zip code", zipcodes)
+# filter the data to the zip code of interest
+df_all = df_all[df_all['zipcode'] == selected_zipcode]
+
+## city map
+map = folium.Map(location=[30.29, -97.74], zoom_start=10.4)
+city = gpd.read_file('./../data/neighbourhoods.geojson')
+city = city[city['neighbourhood'] == str(selected_zipcode)]
+folium.Choropleth(
+    geo_data=city,
+    # create the data that should be used as an overlay
+    #data=city,
+    # more on how to plot https://python-visualization.github.io/folium/latest/user_guide/geojson/choropleth.html
+    #columns=["zipcode", "retrun_per100k"],
+    # by looking inside the json file, see where zipcode data is located and address it here
+    #key_on="feature.properties.neighbourhood",
+    # set the colors OrangeRed
+    # more info on colors https://python-visualization.github.io/folium/latest/advanced_guide/colormaps.html 
+    # https://python-visualization.github.io/folium/latest/user_guide/geojson/geojson.html
+    fill_opacity=0.3,
+    line_weight=2,
+).add_to(map)
+
+
+# use with to set the folium map in a column
+with col1:
+    output = folium_static(map, width=380, height=400)
+number_of_homes = int(df_all.shape[0]/4)
+col1.write('###### Number of homes:')
+col1.write(f'##### {number_of_homes}')
+if number_of_homes < 50: col1.warning('Too few observations for reliable estimates!', icon="⚠️")
+
+
+#=========> column 2
+### PLOT 1###
+# calculations for plotting yearly income with number of beds
+# groupby the datafram by the variable of interest for plotting and also the time of year
+# to calculate summation of incomes for this variable at all times of the year
+bed_quarter_income = df_all.groupby(['host_is_superhost', 'time_quarter'])[['quarterly_income']].mean()
+bed_yearly_income = []
+# create a list of list with number of bedrooms and summation of incomes for all quarters
+# we will be looping through the first index (number of beds and pick up them in groups of 4)
+# this approach is used due to a problem with .loc and streamlit.
+for i in range(8):
+    temp = bed_quarter_income.iloc[4*i:4*(i+1)]
+    bed_yearly_income.append([i, temp.sum().values[0]])
+bed_yearly_income = pd.DataFrame(bed_yearly_income, columns=['host_is_superhost', 'yearly_income'])
+bed_yearly_income['host_is_superhost'] = bed_yearly_income['host_is_superhost'].astype(str)
+bed_yearly_income = bed_yearly_income[bed_yearly_income['yearly_income']>0]
+chart = (
+        alt.Chart(
+            data=bed_yearly_income,
+            title=f"Income vs. host experience",
+        )
+        .mark_bar()
+        .encode(
+            x= alt.X('host_is_superhost', title='Is superhost'),
+            y=alt.Y('yearly_income', title='Yearly income, $')
+        )
+        .properties(
+            width=350,  # Set the width of the plot
+            height=350 
+        )
+        .configure_axis(
+            labelAngle=0  # Set the angle of the x-axis labels
+        ).configure_title(
+            fontSize=20,  # Set the font size of the title
+            anchor='middle'
+        )
+        
+)
+col2.altair_chart(chart)
+
+### PLOT 2###
+# calculations for plotting yearly income with number of beds
+# groupby the datafram by the variable of interest for plotting and also the time of year
+# to calculate summation of incomes for this variable at all times of the year
+bed_quarter_income = df_all.groupby(['has_pool', 'time_quarter'])[['quarterly_income']].mean()
+bed_yearly_income = []
+# create a list of list with number of bedrooms and summation of incomes for all quarters
+# we will be looping through the first index (number of beds and pick up them in groups of 4)
+# this approach is used due to a problem with .loc and streamlit.
+for i in range(8):
+    temp = bed_quarter_income.iloc[4*i:4*(i+1)]
+    bed_yearly_income.append([i, temp.sum().values[0]])
+bed_yearly_income = pd.DataFrame(bed_yearly_income, columns=['has_pool', 'yearly_income'])
+bed_yearly_income['has_pool'] = bed_yearly_income['has_pool'].astype(str)
+bed_yearly_income = bed_yearly_income[bed_yearly_income['yearly_income']>0]
+chart = (
+        alt.Chart(
+            data=bed_yearly_income,
+            title=f"Income vs. having pool",
+        )
+        .mark_bar()
+        .encode(
+            x= alt.X('has_pool', title='Has pool'),
+            y=alt.Y('yearly_income', title='Yearly income, $')
+        )
+        .properties(
+            width=350,  # Set the width of the plot
+            height=350 
+        )
+        .configure_axis(
+            labelAngle=0  # Set the angle of the x-axis labels
+        ).configure_title(
+            fontSize=20,  # Set the font size of the title
+            anchor='middle'
+        )
+        
+)
+col2.altair_chart(chart)
+
+
+
+#=========> column 3
+### PLOT 1###
+# calculations for plotting yearly income with number of beds
+# groupby the datafram by the variable of interest for plotting and also the time of year
+# to calculate summation of incomes for this variable at all times of the year
+bed_quarter_income = df_all.groupby(['bedrooms', 'time_quarter'])[['quarterly_income']].mean()
+bed_yearly_income = []
+# create a list of list with number of bedrooms and summation of incomes for all quarters
+# we will be looping through the first index (number of beds and pick up them in groups of 4)
+# this approach is used due to a problem with .loc and streamlit.
+for i in range(8):
+    temp = bed_quarter_income.iloc[4*i:4*(i+1)]
+    bed_yearly_income.append([i, temp.sum().values[0]])
+bed_yearly_income = pd.DataFrame(bed_yearly_income, columns=['bedrooms', 'yearly_income'])
+bed_yearly_income['bedrooms'] = bed_yearly_income['bedrooms'].astype(str)
+bed_yearly_income = bed_yearly_income[bed_yearly_income['yearly_income']>0]
+chart = (
+        alt.Chart(
+            data=bed_yearly_income,
+            title=f"Yearly income vs. bedrooms",
+        )
+        .mark_bar()
+        .encode(
+            x= alt.X('bedrooms', title='Number of bedrooms'),
+            y=alt.Y('yearly_income', title='Yearly income, $')
+        )
+        .properties(
+            width=650,  # Set the width of the plot
+            height=350 
+        )
+        .configure_axis(
+            labelAngle=0  # Set the angle of the x-axis labels
+        ).configure_title(
+            fontSize=20,  # Set the font size of the title
+            anchor='middle'
+        )
+        
+)
+col3.altair_chart(chart)
+
+### PLOT 2###
+# calculations for plotting yearly income with number of beds
+# groupby the datafram by the variable of interest for plotting and also the time of year
+# to calculate summation of incomes for this variable at all times of the year
+bed_quarter_inv = df_all.groupby(['bedrooms', 'time_quarter'])[['quarterly_income_per100']].mean()
+bed_yearly_inv = []
+# create a list of list with number of bedrooms and summation of incomes for all quarters
+# we will be looping through the first index (number of beds and pick up them in groups of 4)
+# this approach is used due to a problem with .loc and streamlit.
+for i in range(8):
+    temp = bed_quarter_inv.iloc[4*i:4*(i+1)]
+    bed_yearly_inv.append([i, temp.sum().values[0]])
+bed_yearly_inv = pd.DataFrame(bed_yearly_inv, columns=['bedrooms', 'quarterly_income_per100'])
+bed_yearly_inv['bedrooms'] = bed_yearly_inv['bedrooms'].astype(str)
+bed_yearly_inv = bed_yearly_inv[bed_yearly_inv['quarterly_income_per100']>0]
+chart = (
+        alt.Chart(
+            data=bed_yearly_inv,
+            title=f"Income per 100k investment",
+        )
+        .mark_bar()
+        .encode(
+            x= alt.X('bedrooms', title='Number of bedrooms'),
+            y=alt.Y('quarterly_income_per100', title='Yearly income, $')
+        )
+        .properties(
+            width=650,  # Set the width of the plot
+            height=350 
+        )
+        .configure_axis(
+            labelAngle=0  # Set the angle of the x-axis labels
+        ).configure_title(
+            fontSize=20,  # Set the font size of the title
+            anchor='middle'
+        )
+        
+)
+col3.altair_chart(chart)
 
 st.text('This app is developed by Masoud "Massi" Alfi to help the investors find the best investment opportunities in Austin Texas.[Inside airbnb](www.insideairbnb.com) was used for get quarterly data from airbnb. Home price data was extracted from [Zillow](www.zillow.com/data).')
 
